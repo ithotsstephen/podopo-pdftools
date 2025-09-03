@@ -212,8 +212,9 @@ async function ensurePdfAndDocx() {
     '/vendor/docx.umd.js'
   ];
 
-  async function tryLoadCandidates(candidates, globalName) {
+  async function tryLoadCandidates(candidates, globalName, attemptsArr) {
     for (const url of candidates) {
+      attemptsArr.push(url);
       try {
         await loadScript(url, globalName, 20000);
         // small settle
@@ -228,8 +229,10 @@ async function ensurePdfAndDocx() {
   }
 
   try {
+    const pdfAttempts = [];
+    const docxAttempts = [];
     if (!window.pdfjsLib) {
-      const used = await tryLoadCandidates(pdfCandidates, 'pdfjsLib');
+      const used = await tryLoadCandidates(pdfCandidates, 'pdfjsLib', pdfAttempts);
       console.info('Loaded pdf.js from', used);
       // try set workerSrc for pdf.js if available
       try {
@@ -239,9 +242,11 @@ async function ensurePdfAndDocx() {
       } catch (e) { /* ignore */ }
     }
     if (!window.docx) {
-      const used = await tryLoadCandidates(docxCandidates, 'docx');
-      console.info('Loaded docx from', used);
+      const used2 = await tryLoadCandidates(docxCandidates, 'docx', docxAttempts);
+      console.info('Loaded docx from', used2);
     }
+    // expose attempt info for diagnostics
+    window.__libLoadInfo = { pdfAttempts, docxAttempts, pdfjsLib: !!window.pdfjsLib, docx: !!window.docx };
   } catch (err) {
     console.error('Failed to load conversion libraries', err);
     throw err;
@@ -528,6 +533,8 @@ $("#img2pdfBtn").addEventListener("click", async () => {
 // Renders PDF pages using PDF.js and packs each page as a full-page image into a .docx
 document.querySelector('#pdf2docBtn').addEventListener('click', async () => {
   // Ensure required libraries are available (try dynamic load if missing)
+  console.info('PDF->Word invoked. Globals:', { pdfjsLib: !!window.pdfjsLib, docx: !!window.docx, Tesseract: !!window.Tesseract });
+  console.info('Lib load info:', window.__libLoadInfo || null);
   try {
     await ensurePdfAndDocx();
   } catch (e) {
@@ -654,6 +661,51 @@ document.querySelector('#pdf2docUseRange')?.addEventListener('click', () => {
 // 'Current' will set to page 1 by default; if preview shows page navigation later, this can be improved
 document.querySelector('#pdf2docCurrent')?.addEventListener('click', () => {
   document.querySelector('#pdf2docRange').value = (typeof _wmPreviewCurrent === 'number' ? _wmPreviewCurrent : 1).toString();
+});
+
+// Diagnostic: check PDF->Word pipeline
+document.querySelector('#pdf2docDiag')?.addEventListener('click', async () => {
+  console.info('Running PDF->Word diagnostic');
+  const results = { pdfjs: !!window.pdfjsLib, docx: !!window.docx };
+  try {
+    await ensurePdfAndDocx();
+    results.afterLoad = { pdfjs: !!window.pdfjsLib, docx: !!window.docx };
+  } catch (e) {
+    console.error('ensurePdfAndDocx failed', e);
+    toast('Library load failed. See console.');
+    return;
+  }
+
+  // Try a tiny PDF render test if pdfjs is present
+  if (window.pdfjsLib) {
+    try {
+      // create a 1-page blank PDF in memory using pdf-lib and render first page
+      if (window.PDFLib) {
+        const { PDFDocument } = window.PDFLib;
+        const doc = await PDFDocument.create();
+        doc.addPage([100,100]);
+        const bytes = await doc.save();
+        const loading = await window.pdfjsLib.getDocument({ data: bytes }).promise;
+        const p = await loading.getPage(1);
+        results.pdfRender = !!p;
+      } else {
+        results.pdfRender = 'pdf-lib missing';
+      }
+    } catch (e) { results.pdfRender = 'error: '+(e && e.message); console.error(e); }
+  }
+
+  // Try a tiny docx pack test
+  if (window.docx) {
+    try {
+      const { Document, Packer, Paragraph } = window.docx;
+      const d = new Document({ sections: [{ children: [ new Paragraph('test') ] }] });
+      const buf = await new Packer().toBuffer(d);
+      results.docxPack = buf && buf.byteLength>0;
+    } catch (e) { results.docxPack = 'error: '+(e && e.message); console.error(e); }
+  }
+
+  console.info('PDF->Word diagnostic results', results);
+  toast(`Diag: pdfjs=${results.pdfjs?'ok':'no'}, docx=${results.docx?'ok':'no'}`);
 });
 
 // Watermark mode toggles (Text / Logo)
