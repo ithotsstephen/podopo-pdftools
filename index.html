@@ -1,6 +1,28 @@
 <!doctype html>
 <html lang="en">
 <head>
+  <style>
+    #watermark.panel[style*="display: block"] .watermark-interactive { display: block !important; }
+    #watermark.panel[style*="display: block"] input[type="file"] { opacity: 1 !important; pointer-events: auto !important; }
+    #watermark.panel[style*="display: block"] #wmLogoControls { display: block !important; }
+  </style>
+  <style>
+    /* Toolbar sits on its own full-width row with wrapped buttons */
+    .toolbar { display:flex; flex-wrap:wrap; gap:12px; align-items:center; width:100%; margin-top:12px; }
+    .toolbar .tool-btn { flex:0 0 auto; padding:10px 14px; border-radius:8px; cursor:pointer; }
+    /* On small screens ensure toolbar becomes columnar */
+    @media (max-width:640px) {
+      .two-column { flex-direction:column; }
+      aside[style] { width:100% !important; flex:0 0 auto !important; }
+      .toolbar { justify-content:flex-start; }
+      .toolbar .tool-btn { width:100%; text-align:left; }
+    }
+  /* Ensure choose-file / interactive sections are full-width rows below the toolbar */
+  .panel fieldset { display:flex; flex-direction:column; gap:12px; }
+  .panel [class$="-interactive"] { display:block !important; width:100%; }
+  .panel input[type="file"] { display:block; width:100%; max-width:100%; }
+  .panel .action { display:flex; gap:8px; flex-wrap:wrap; align-items:center; }
+  </style>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>PDF Forge – Online PDF Editor & Converter</title>
@@ -15,6 +37,10 @@
 
   <link rel="icon" type="image/png" href="icons/icon-192.png" />
   <link rel="stylesheet" href="styles.css" />
+  <style>
+    #watermark.panel[style*="display: block"] .watermark-interactive { display: block !important; }
+    #watermark.panel[style*="display: block"] input[type="file"] { opacity: 1 !important; pointer-events: auto !important; }
+  </style>
 
   <!-- PDF-Lib for editing PDFs (loaded from CDN). -->
   <script src="https://cdn.jsdelivr.net/npm/pdf-lib/dist/pdf-lib.min.js"></script>
@@ -33,7 +59,9 @@
   <script defer src="app.js"></script>
 </head>
 <body>
-      <header class="header">
+  <div class="container">
+  
+    <header class="header">
       <div class="brand">
         <img alt="Logo" src="icons/icon-192.png" />
         <div>
@@ -41,7 +69,7 @@
           <div class="badge">Online PDF Editor & Converter</div>
         </div>
       </div>
-      <div>
+      <!-- <div>
         <label for="toolMenu" style="margin-right:8px;color:#fff;font-size:0.9em">Tools</label>
         <select id="toolMenu" style="margin-right:12px">
           <option value="#merge">Merge PDFs</option>
@@ -54,13 +82,12 @@
           <option value="#ocr">OCR → Text</option>
         </select>
         <button id="installBtn" class="install-btn" title="Install as an app">Install</button>
-      </div>
+      </div> -->
     </header>
-  <div class="container">
-    <!-- Hero Section -->
-    <section class="hero" style="padding:32px 0 24px 0;text-align:center;background:linear-gradient(90deg,#a055bb 0%,#6a9cff 100%);color:#fff;">
+
+     <section class="hero" style="padding:32px 0 24px 0;text-align:center;background:linear-gradient(90deg,#a055bb 0%,#6a9cff 100%);color:#fff;">
       <div style="font-size:1.1em;font-weight:600;letter-spacing:1px;margin-bottom:10px;opacity:0.85;">
-        Podopo – AI-Powered PDF Toolbox for Creators, Freelancers, and Businesses
+        Podopo – AI-Powered. PDF Toolbox for Creators, Freelancers, and Businesses
       </div>
       <h1 style="font-size:2.2em;font-weight:800;margin-bottom:12px;line-height:1.1;">All-in-One PDF Tools – Simple, Fast, Secure</h1>
       <div style="font-size:1.25em;max-width:600px;margin:0 auto 18px auto;line-height:1.4;">
@@ -72,9 +99,8 @@
       </div>
     </section>
 
-
-    <main class="single-column" style="padding-top:50px;padding-bottom:50px;"></main>
-      <section class="card">
+    <main class="two-column" style="display:flex;gap:24px;padding-top:50px;padding-bottom:50px;align-items:flex-start;">
+      <section class="card" style="flex:1">
         <h2>Tools</h2>
         <p>Quickly <strong>merge</strong>, <strong>split</strong>, <strong>watermark</strong>, <strong>rotate</strong> PDFs, or convert <strong>images → PDF</strong>. Processed files never leave your browser.</p>
 
@@ -115,17 +141,14 @@
               <div class="action">
                 <button id="splitBtn" class="primary-btn">Extract</button>
                 <a id="splitDownload" class="download-link" download="extracted.pdf">Download</a>
-        <!-- Preview panel moved below tool controls -->
-        <div id="previewPanel" class="card" style="display:none;margin-top:24px">
-          <h2>Preview</h2>
-          <p>Results appear here; you can view or download them.</p>
-          <div class="preview" style="display:flex;justify-content:center;">
-            <iframe id="preview" title="PDF Preview" style="width:340px;max-width:90vw;height:480px;border:1px solid #ccc;border-radius:8px;"></iframe>
-          </div>
-        </div>
               </div>
-    </main>
-   
+            </div>
+          </fieldset>
+        </div>
+
+        <div id="watermark" class="panel" style="display:none">
+          <fieldset>
+            <legend>Add Watermark</legend>
             <div class="watermark-interactive" style="display:none">
               <div style="margin-top:8px;display:flex;gap:12px;align-items:center">
                 <label><input type="radio" name="wmMode" id="wmModeText" value="text" checked> Text</label>
@@ -141,9 +164,12 @@
                 <label for="wmLogo" style="margin-top:8px">Upload logo (PNG/JPG):</label>
                 <input id="wmLogo" type="file" accept="image/*" />
               </div>
-              <div id="wmPreviewWrap" style="margin-top:12px;display:flex;flex-direction:column;gap:6px;align-items:flex-start">
-                <div style="font-size:0.9em;color:#666">Preview (first page):</div>
-                <div style="display:flex;align-items:center;gap:8px;width:100%">
+              <!-- Watermark preview is shown in the right-column Preview pane (iframe#preview).
+                   Keep an offscreen canvas for rendering backstage so JS can export snapshots
+                   into the preview iframe; hide the bottom preview area to match other modules. -->
+              <div id="wmPreviewWrap" style="margin-top:12px;display:none;">
+                <div style="font-size:0.9em;color:#666">Preview will appear in the right column.</div>
+                <div style="display:none">
                   <button id="wmPrevPage" class="small-btn" type="button">◀</button>
                   <div style="display:flex;align-items:center;gap:6px">
                     <input id="wmPreviewPageNum" type="number" value="1" min="1" style="width:60px" />
@@ -151,7 +177,8 @@
                   </div>
                   <button id="wmNextPage" class="small-btn" type="button">▶</button>
                 </div>
-                <canvas id="wmPreview" width="420" height="594" style="border:1px solid #ddd;max-width:100%;height:auto"></canvas>
+                <!-- hidden canvas used by JS to render and export images to the iframe preview -->
+                <canvas id="wmPreview" width="420" height="594" style="display:none;border:1px solid #ddd;max-width:100%;height:auto"></canvas>
               </div>
               <label style="margin-top:8px;display:flex;align-items:center;gap:8px">Rotate (degrees)
                 <input id="wmRotate" type="number" value="-45" style="width:90px"/>
@@ -181,6 +208,8 @@
             </div>
           </fieldset>
         </div>
+
+  <!-- previewPanel moved to right column (see after section close) -->
 
         <div id="rotate" class="panel" style="display:none">
           <fieldset>
@@ -306,13 +335,17 @@
         </div>
       </section>
 
-      <aside class="card">
-        <h2>Preview</h2>
-        <p>Results appear here; you can view or download them.</p>
-        <div class="preview">
-          <iframe id="preview" title="PDF Preview"></iframe>
+      <!-- Right column: preview panel -->
+      <aside style="width:640px;flex:0 0 640px;">
+        <div id="previewPanel" class="card" style="display:block;">
+          <h2>Preview</h2>
+          <p>Results appear here; you can view or download them.</p>
+          <div class="preview" style="display:flex;justify-content:center;">
+            <iframe id="preview" title="PDF Preview" style="width:600px;max-width:100%;height:700px;border:1px solid #ccc;border-radius:8px;"></iframe>
+          </div>
         </div>
       </aside>
+
     </main>
 
     <footer class="footer">

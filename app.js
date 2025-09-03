@@ -19,6 +19,8 @@ document.querySelectorAll(".tool-btn").forEach(btn => {
       const interactive = p.querySelector('[class$="-interactive"]');
       if (interactive) interactive.style.display = "none";
     });
+  // reset all module state and UI when switching modules
+  try { resetAllModules(); } catch (e) {}
     btn.classList.add("active");
     const target = btn.getAttribute("data-target");
     const panel = document.querySelector(target);
@@ -27,6 +29,17 @@ document.querySelectorAll(".tool-btn").forEach(btn => {
       const interactive = panel.querySelector('[class$="-interactive"]');
       if (interactive) interactive.style.display = "block";
     }
+    // Show or hide global preview: hide for watermark (it has its own canvas), show for other tools
+    try {
+      const pp = document.querySelector('#previewPanel');
+      // For watermark we also show the main preview (we'll render the watermark canvas into it)
+      if (target === '#watermark') {
+        if (pp) pp.style.display = 'block';
+        try { if (typeof renderWmPreview === 'function') renderWmPreview().catch(()=>{}); } catch (e) {}
+      } else {
+        if (pp) pp.style.display = 'block';
+      }
+    } catch (e) { /* ignore */ }
   });
 });
 
@@ -50,6 +63,18 @@ if (toolMenu) {
       const interactive = el.querySelector('[class$="-interactive"]');
       if (interactive) interactive.style.display = "block";
     }
+    // if selected via header menu, hide preview for watermark and render its preview; otherwise show preview
+    try {
+      const pp = document.querySelector('#previewPanel');
+    // clear all module state when selecting tool from header
+  try { resetAllModules(); } catch (e) {}
+  if (sel === '#watermark') {
+        if (pp) pp.style.display = 'block';
+        try { if (typeof renderWmPreview === 'function') renderWmPreview().catch(()=>{}); } catch (e) {}
+      } else {
+        if (pp) pp.style.display = 'block';
+      }
+    } catch (e) {}
     // mark matching toolbar button active
     const tb = document.querySelector(`.tool-btn[data-target="${sel}"]`);
     if (tb) tb.classList.add('active');
@@ -85,7 +110,85 @@ function downloadAndPreview(bytes, filename) {
   const a = document.createElement('a');
   a.href = url; a.download = filename;
   a.click();
-  $("#preview").src = url;
+  // ensure the preview panel is visible and show the PDF in the iframe
+  try {
+    const pp = document.querySelector('#previewPanel');
+    if (pp) pp.style.display = 'block';
+    const iframe = document.querySelector('#preview');
+    if (iframe) {
+      iframe.src = url;
+      // bring into view on small screens
+      try { iframe.scrollIntoView({ behavior: 'smooth', block: 'center' }); } catch (e) {}
+    }
+  } catch (e) {
+    console.info('Preview unavailable', e);
+  }
+}
+
+// Reset the main preview iframe and watermark canvas when switching tools
+function resetPreview() {
+  try {
+    const iframe = document.querySelector('#preview');
+    if (iframe) {
+      // revoke any blob URLs used as preview (but keep download blobUrls intact)
+      try {
+        const src = iframe.src || iframe.getAttribute('src');
+        if (src && src.startsWith('blob:')) URL.revokeObjectURL(src);
+      } catch (e) {}
+      // remove src and show a friendly placeholder in the iframe using srcdoc
+      try { iframe.removeAttribute('src'); } catch (e) {}
+      try {
+        iframe.srcdoc = `<!doctype html><html><head><meta charset="utf-8"><style>body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;color:#444;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;padding:24px;background:#fafafa} .msg{max-width:540px;text-align:center;font-size:1rem;color:#666}</style></head><body><div class="msg">Results appear here; you can view or download them.</div></body></html>`;
+      } catch (e) { try { iframe.removeAttribute('srcdoc'); } catch (ee) {} }
+    }
+  } catch (e) {}
+  try {
+    // revoke any temporary preview URLs stored on download anchors
+    ['#pdf2docDownload','#pdf2docDownload','#pdf2docDownload'].forEach(sel => {
+      const a = document.querySelector(sel);
+      if (a && a.dataset && a.dataset.previewUrl) {
+        try { URL.revokeObjectURL(a.dataset.previewUrl); } catch (e) {}
+        delete a.dataset.previewUrl;
+      }
+    });
+  } catch (e) {}
+  try {
+    if (typeof wmPreviewCtx !== 'undefined' && wmPreviewCtx) {
+      wmPreviewCtx.clearRect(0,0, wmPreviewCanvas.width, wmPreviewCanvas.height);
+    }
+  } catch (e) {}
+}
+
+// Reset all module inputs, downloads, and internal state when switching tools
+function resetAllModules() {
+  try {
+    // clear file inputs
+    ['#mergeFiles','#splitFile','#wmFile','#wmLogo','#rotFile','#imgFiles','#pdf2docFile','#ocrFile','#doc2pdfFile'].forEach(sel => {
+      const el = document.querySelector(sel);
+      if (el && 'value' in el) el.value = '';
+    });
+    // hide and revoke download links
+    ['#mergeDownload','#splitDownload','#wmDownload','#rotDownload','#img2pdfDownload','#pdf2docDownload','#ocrDownload','#doc2pdfDownload'].forEach(sel => {
+      const a = document.querySelector(sel);
+      if (a) {
+        try { if (a.dataset?.blobUrl) { URL.revokeObjectURL(a.dataset.blobUrl); } } catch (e) {}
+        try { if (a.dataset?.previewUrl) { URL.revokeObjectURL(a.dataset.previewUrl); } } catch (e) {}
+        a.removeAttribute('href'); a.style.display = 'none'; delete a.dataset.blobUrl; delete a.dataset.previewUrl;
+      }
+    });
+    // clear merge list
+    try { mergeFilesList.length = 0; renderMergeList(); } catch (e) {}
+    // clear watermark preview state
+    try { _wmPreviewPdf = null; _wmPreviewPdfTotal = 0; _wmPreviewCurrent = 1; wmPreviewBaseImageData = null; if (typeof _wmLastLogoUrl !== 'undefined' && _wmLastLogoUrl) { try { URL.revokeObjectURL(_wmLastLogoUrl); } catch(e){} _wmLastLogoUrl = null;} if (wmPreviewCtx) try { wmPreviewCtx.clearRect(0,0, wmPreviewCanvas.width, wmPreviewCanvas.height); } catch(e){} } catch (e) {}
+    // clear pdf2doc progress/status
+    try { const progressEl = document.querySelector('#pdf2docProgress'); if (progressEl) progressEl.style.display='none'; const progressBar = document.querySelector('#pdf2docProgressBar'); if (progressBar) progressBar.style.width='0%'; const statusEl = document.querySelector('#pdf2docStatus'); if (statusEl) statusEl.textContent=''; } catch (e) {}
+    // clear OCR outputs and progress
+    try { const ocrOut = document.querySelector('#ocrOutput'); if (ocrOut) ocrOut.value=''; const ocrProg = document.querySelector('#ocrProgress'); if (ocrProg) ocrProg.style.display='none'; const ocrBar = document.querySelector('#ocrProgressBar'); if (ocrBar) ocrBar.style.width='0%'; const ocrStatus = document.querySelector('#ocrStatus'); if (ocrStatus) ocrStatus.textContent=''; const ocrDl = document.querySelector('#ocrDownload'); if (ocrDl) { ocrDl.style.display='none'; ocrDl.removeAttribute('href'); } } catch (e) {}
+    // rotate & other simple resets
+    try { const rotRange = document.querySelector('#rotRange'); if (rotRange) rotRange.value=''; } catch (e) {}
+    // finally clear preview iframe
+    try { resetPreview(); } catch (e) {}
+  } catch (e) { console.warn('resetAllModules failed', e); }
 }
 
 // Parse page ranges like "1-3,5,9-10" into zero-based array of indices
@@ -272,6 +375,17 @@ async function ensurePdfAndDocx() {
   }
 }
 
+// If pdf.js was included via <script> tag, ensure workerSrc points to a usable worker.
+try {
+  if (window.pdfjsLib && window.pdfjsLib.GlobalWorkerOptions) {
+    if (!window.pdfjsLib.GlobalWorkerOptions.workerSrc) {
+      // prefer local vendor worker if present
+      window.pdfjsLib.GlobalWorkerOptions.workerSrc = '/vendor/pdf.worker.min.js';
+      console.info('pdf.js workerSrc set to /vendor/pdf.worker.min.js');
+    }
+  }
+} catch (e) { /* ignore */ }
+
 /* ---- Merge PDFs ---- */
 // Maintain an ordered list of files for merging
 const mergeFilesList = [];
@@ -311,6 +425,9 @@ $("#mergeFiles").addEventListener('change', (e) => {
   const files = Array.from(e.target.files || []);
   for (const f of files) mergeFilesList.push(f);
   renderMergeList();
+  // show preview panel (user expects preview column visible) and hide stale download link
+  try { const pp = document.querySelector('#previewPanel'); if (pp) pp.style.display = 'block'; } catch (e) {}
+  try { const md = document.querySelector('#mergeDownload'); if (md) md.style.display = 'none'; } catch (e) {}
   // clear input so same file can be re-added if needed
   e.target.value = '';
 });
@@ -328,10 +445,23 @@ $("#mergeBtn").addEventListener("click", async () => {
       pages.forEach(p => out.addPage(p));
     }
     const pdfBytes = await out.save();
+    // populate download link and preview, but do NOT trigger an automatic download — user must click
+    const blob = new Blob([pdfBytes], { type: 'application/pdf' });
+    const url = URL.createObjectURL(blob);
+    // revoke previous URL if present to avoid leaks
+    try {
+      const prev = $("#mergeDownload").dataset?.blobUrl;
+      if (prev) URL.revokeObjectURL(prev);
+    } catch (e) {}
     $("#mergeDownload").style.display = "inline-flex";
-    $("#mergeDownload").href = URL.createObjectURL(new Blob([pdfBytes], {type:"application/pdf"}));
-    downloadAndPreview(pdfBytes, "merged.pdf");
-    toast("Merged successfully.");
+    $("#mergeDownload").href = url;
+    $("#mergeDownload").dataset.blobUrl = url;
+    // show preview without auto-downloading
+    try {
+      const pp = document.querySelector('#previewPanel'); if (pp) pp.style.display = 'block';
+      const iframe = document.querySelector('#preview'); if (iframe) iframe.src = url;
+    } catch (e) {}
+    toast("Merged successfully. Click Download to save the file.");
     // clear list after merge
     mergeFilesList.length = 0; renderMergeList();
   } catch (err) {
@@ -355,15 +485,32 @@ $("#splitBtn").addEventListener("click", async () => {
     const out = await PDFDocument.create();
     const pages = await out.copyPages(src, indices);
     pages.forEach(p => out.addPage(p));
-    const pdfBytes = await out.save();
-    $("#splitDownload").style.display = "inline-flex";
-    $("#splitDownload").href = URL.createObjectURL(new Blob([pdfBytes], {type:"application/pdf"}));
-    downloadAndPreview(pdfBytes, "extracted.pdf");
+  const pdfBytes = await out.save();
+  // revoke previous split URL if any
+  try { const prev = $("#splitDownload").dataset?.blobUrl; if (prev) URL.revokeObjectURL(prev); } catch (e) {}
+  const splitUrl = URL.createObjectURL(new Blob([pdfBytes], {type:"application/pdf"}));
+  $("#splitDownload").style.display = "inline-flex";
+  $("#splitDownload").href = splitUrl;
+  $("#splitDownload").dataset.blobUrl = splitUrl;
+  // show preview without auto-downloading
+  try { const pp = document.querySelector('#previewPanel'); if (pp) pp.style.display = 'block'; const iframe = document.querySelector('#preview'); if (iframe) iframe.src = splitUrl; } catch (e) {}
     toast(`Extracted ${indices.length} page(s).`);
   } catch (err) {
     console.error(err);
     toast("Split failed. Check the page range.");
   }
+});
+
+// Revoke merge blob URL after user clicks the Download link to free memory and hide link
+// Keep merge download link available after click so users can re-download the generated PDF.
+// The old behavior revoked the blob URL and hid the link which prevented additional downloads.
+// We now leave the blob URL intact; it will be revoked when a new merge is created (see merge handler).
+document.querySelector('#mergeDownload')?.addEventListener('click', (e) => {
+  try {
+    const a = e.currentTarget;
+    // Informational toast that the download started; do not revoke or hide here.
+    setTimeout(() => { try { toast('Download started'); } catch (err) {} }, 120);
+  } catch (err) { /* ignore */ }
 });
 
 /* ---- Watermark ---- */
@@ -466,10 +613,15 @@ $("#wmBtn").addEventListener("click", async () => {
         }
       }
     }
-    const outBytes = await doc.save();
-    $("#wmDownload").style.display = "inline-flex";
-    $("#wmDownload").href = URL.createObjectURL(new Blob([outBytes], {type:"application/pdf"}));
-    downloadAndPreview(outBytes, "watermarked.pdf");
+  const outBytes = await doc.save();
+  // revoke previous watermark URL if any
+  try { const prev = $("#wmDownload").dataset?.blobUrl; if (prev) URL.revokeObjectURL(prev); } catch (e) {}
+  const wmUrl = URL.createObjectURL(new Blob([outBytes], {type:"application/pdf"}));
+  $("#wmDownload").style.display = "inline-flex";
+  $("#wmDownload").href = wmUrl;
+  $("#wmDownload").dataset.blobUrl = wmUrl;
+  // show preview without auto-downloading
+  try { const pp = document.querySelector('#previewPanel'); if (pp) pp.style.display = 'block'; const iframe = document.querySelector('#preview'); if (iframe) iframe.src = wmUrl; } catch (e) {}
     toast("Watermark added.");
   } catch (err) {
     console.error(err);
@@ -494,14 +646,42 @@ $("#rotBtn").addEventListener("click", async () => {
       const page = doc.getPage(i);
       page.setRotation(degrees(deg));
     });
-    const outBytes = await doc.save();
-    $("#rotDownload").style.display = "inline-flex";
-    $("#rotDownload").href = URL.createObjectURL(new Blob([outBytes], {type:"application/pdf"}));
-    downloadAndPreview(outBytes, "rotated.pdf");
+  const outBytes = await doc.save();
+  // revoke previous rotate URL if any
+  try { const prev = $("#rotDownload").dataset?.blobUrl; if (prev) URL.revokeObjectURL(prev); } catch (e) {}
+  const rotUrl = URL.createObjectURL(new Blob([outBytes], {type:"application/pdf"}));
+  $("#rotDownload").style.display = "inline-flex";
+  $("#rotDownload").href = rotUrl;
+  $("#rotDownload").dataset.blobUrl = rotUrl;
+  // show preview without auto-downloading
+  try { const pp = document.querySelector('#previewPanel'); if (pp) pp.style.display = 'block'; const iframe = document.querySelector('#preview'); if (iframe) iframe.src = rotUrl; } catch (e) {}
     toast(`Rotated ${indices.length} page(s) by ${deg}°.`);
   } catch (err) {
     console.error(err);
     toast("Rotate failed.");
+  }
+});
+
+// When a file is chosen for rotate, load it into the preview iframe and make the preview panel visible
+document.querySelector('#rotFile')?.addEventListener('change', (e) => {
+  const f = e.target.files?.[0];
+  const pp = document.querySelector('#previewPanel');
+  const iframe = document.querySelector('#preview');
+  const rotDownload = document.querySelector('#rotDownload');
+  if (f) {
+    if (pp) pp.style.display = 'block';
+    if (iframe) {
+      try {
+        const url = URL.createObjectURL(f);
+        iframe.src = url;
+        try { iframe.scrollIntoView({ behavior: 'smooth', block: 'center' }); } catch (err) {}
+      } catch (err) {
+        console.warn('Failed to set preview src', err);
+      }
+    }
+    if (rotDownload) rotDownload.style.display = 'none';
+  } else {
+    if (iframe) iframe.src = '';
   }
 });
 
@@ -537,10 +717,15 @@ $("#img2pdfBtn").addEventListener("click", async () => {
       const page = doc.addPage([width, height]);
       page.drawImage(img, { x: 0, y: 0, width, height });
     }
-    const outBytes = await doc.save();
-    $("#img2pdfDownload").style.display = "inline-flex";
-    $("#img2pdfDownload").href = URL.createObjectURL(new Blob([outBytes], {type:"application/pdf"}));
-    downloadAndPreview(outBytes, "images.pdf");
+  const outBytes = await doc.save();
+  // revoke previous images->pdf URL if any
+  try { const prev = $("#img2pdfDownload").dataset?.blobUrl; if (prev) URL.revokeObjectURL(prev); } catch (e) {}
+  const img2pdfUrl = URL.createObjectURL(new Blob([outBytes], {type:"application/pdf"}));
+  $("#img2pdfDownload").style.display = "inline-flex";
+  $("#img2pdfDownload").href = img2pdfUrl;
+  $("#img2pdfDownload").dataset.blobUrl = img2pdfUrl;
+  // show preview without auto-downloading
+  try { const pp = document.querySelector('#previewPanel'); if (pp) pp.style.display = 'block'; const iframe = document.querySelector('#preview'); if (iframe) iframe.src = img2pdfUrl; } catch (e) {}
     toast("Created PDF from images.");
   } catch (err) {
     console.error(err);
@@ -688,12 +873,19 @@ document.querySelector('#pdf2docBtn').addEventListener('click', async () => {
     const blob = new Blob([docBuf], { type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' });
     const url = URL.createObjectURL(blob);
     const a = document.querySelector('#pdf2docDownload');
+    // revoke previous url if any
+    try { const prev = a.dataset?.blobUrl; if (prev) URL.revokeObjectURL(prev); } catch (e) {}
     a.href = url; a.style.display = 'inline-flex';
     a.download = (file.name.replace(/\.pdf$/i,'') || 'converted') + '.docx';
-    // preview first page image if available
+    a.dataset.blobUrl = url;
+    // preview first page image if available (do not auto-download)
     try {
       const firstBlob = await renderPageToPng(indices[0] || 1);
-      downloadAndPreview(await firstBlob.arrayBuffer(), a.download.replace(/\.docx$/i,'.pdf'));
+      // revoke previous preview used by pdf2doc if any and show image in iframe
+      try { const prev = a.dataset?.previewUrl; if (prev) URL.revokeObjectURL(prev); } catch (e) {}
+      const imgUrl = URL.createObjectURL(firstBlob);
+      a.dataset.previewUrl = imgUrl;
+      try { const pp = document.querySelector('#previewPanel'); if (pp) pp.style.display = 'block'; const iframe = document.querySelector('#preview'); if (iframe) iframe.src = imgUrl; } catch (e) {}
     } catch (e) { /* ignore preview failure */ }
     setProgress(100, 'Conversion complete.');
     setTimeout(() => { if (progressEl) progressEl.style.display = 'none'; }, 2000);
@@ -712,7 +904,8 @@ document.querySelector('#pdf2docUseRange')?.addEventListener('click', () => {
 });
 // 'Current' will set to page 1 by default; if preview shows page navigation later, this can be improved
 document.querySelector('#pdf2docCurrent')?.addEventListener('click', () => {
-  document.querySelector('#pdf2docRange').value = (typeof _wmPreviewCurrent === 'number' ? _wmPreviewCurrent : 1).toString();
+  // Preview removed; default to page 1 for "Current"
+  document.querySelector('#pdf2docRange').value = '1';
 });
 
 // Diagnostic: check PDF->Word pipeline
@@ -769,29 +962,45 @@ function updateWmModeUI() {
 document.querySelectorAll('input[name="wmMode"]').forEach(r => r.addEventListener('change', updateWmModeUI));
 updateWmModeUI();
 
-// Watermark preview and validation
+// Watermark preview (guarded) + validation
 const wmPreviewCanvas = document.querySelector('#wmPreview');
 const wmPreviewCtx = wmPreviewCanvas?.getContext && wmPreviewCanvas.getContext('2d');
-// cached preview PDF and page state
 let _wmPreviewPdf = null;
 let _wmPreviewPdfTotal = 0;
 let _wmPreviewCurrent = 1;
+// store the last rendered base page image so overlays can be reapplied cleanly
+let wmPreviewBaseImageData = null;
+// track last created object URL for logo to revoke when replaced
+let _wmLastLogoUrl = null;
+
 async function renderWmPreview() {
+  // guarded: ensure canvas present
   if (!wmPreviewCtx) return;
+  // ensure pdf.js is loaded (try dynamic local vendor fallback)
+  if (typeof window.pdfjsLib === 'undefined') {
+    try {
+      await loadScript('/vendor/pdf.min.js', 'pdfjsLib');
+      if (window.pdfjsLib && window.pdfjsLib.GlobalWorkerOptions && !window.pdfjsLib.GlobalWorkerOptions.workerSrc) {
+        window.pdfjsLib.GlobalWorkerOptions.workerSrc = '/vendor/pdf.worker.min.js';
+      }
+    } catch (e) {
+      console.info('pdf.js not available for watermark preview', e);
+      return;
+    }
+  }
+    // ensure the global preview panel is visible so watermark snapshots render into it
+  const previewPanel = document.querySelector('#previewPanel'); if (previewPanel) previewPanel.style.display = 'block';
   // clear
   wmPreviewCtx.fillStyle = '#fff'; wmPreviewCtx.fillRect(0,0,wmPreviewCanvas.width, wmPreviewCanvas.height);
-
   const pdfFile = $('#wmFile').files?.[0];
   if (!pdfFile) {
     wmPreviewCtx.fillStyle = '#666'; wmPreviewCtx.fillText('Open a PDF to preview watermark', 10, 20);
     return;
   }
-
   try {
     const arrayBuffer = await pdfFile.arrayBuffer();
     const loadingTask = window.pdfjsLib.getDocument({ data: arrayBuffer });
     const pdf = await loadingTask.promise;
-    // cache pdf and page info for navigation
     _wmPreviewPdf = pdf;
     _wmPreviewPdfTotal = pdf.numPages;
     _wmPreviewCurrent = 1;
@@ -801,49 +1010,30 @@ async function renderWmPreview() {
     if (pageNumEl) pageNumEl.value = 1;
     const page = await pdf.getPage(1);
     const viewport = page.getViewport({ scale: wmPreviewCanvas.width / page.getViewport({scale:1}).width });
-    const renderCtx = { canvasContext: wmPreviewCtx, viewport };
-    await page.render(renderCtx).promise;
-
-    // overlay watermark
-    const mode = document.querySelector('input[name="wmMode"]:checked')?.value || 'text';
-    const opacity = Math.max(0, Math.min(1, parseFloat($('#wmOpacity').value) || 0.3));
-    if (mode === 'logo') {
-      const logoFile = $('#wmLogo').files?.[0];
-      if (logoFile) {
-        const img = new Image();
-        img.onload = () => {
-          wmPreviewCtx.globalAlpha = opacity;
-          const targetW = wmPreviewCanvas.width * 0.4;
-          const scale = targetW / img.width;
-          const targetH = img.height * scale;
-          const x = (wmPreviewCanvas.width - targetW)/2;
-          const y = (wmPreviewCanvas.height - targetH)/2;
-          wmPreviewCtx.drawImage(img, x, y, targetW, targetH);
-          wmPreviewCtx.globalAlpha = 1;
-        };
-        img.src = URL.createObjectURL(logoFile);
+    await page.render({ canvasContext: wmPreviewCtx, viewport }).promise;
+  // capture base rendered page image data so parameter-only updates can restore the page
+  try { wmPreviewBaseImageData = wmPreviewCtx.getImageData(0,0, wmPreviewCanvas.width, wmPreviewCanvas.height); } catch (e) { wmPreviewBaseImageData = null; }
+    overlayWmOnCanvas();
+    // render the canvas into the main iframe preview as a blob URL so users see the watermarked page in the right column
+    try {
+      const iframe = document.querySelector('#preview');
+      if (iframe) {
+        if (iframe.src && iframe.src.startsWith('blob:')) { try { URL.revokeObjectURL(iframe.src); } catch (e) {} }
+        const blob = await new Promise(res => wmPreviewCanvas.toBlob(res, 'image/png'));
+        const url = URL.createObjectURL(blob);
+        iframe.src = url;
+        // remember this preview URL so resetPreview can revoke it
+        const a = document.querySelector('#wmDownload');
+        if (a) { try { if (a.dataset?.previewUrl) URL.revokeObjectURL(a.dataset.previewUrl); } catch (e) {} a.dataset.previewUrl = url; }
       }
-    } else {
-      const text = $('#wmText').value || 'CONFIDENTIAL';
-      const rotation = parseFloat($('#wmRotate').value) || -45;
-      wmPreviewCtx.save();
-      wmPreviewCtx.globalAlpha = opacity;
-      wmPreviewCtx.translate(wmPreviewCanvas.width/2, wmPreviewCanvas.height/2);
-      wmPreviewCtx.rotate((rotation * Math.PI)/180);
-      wmPreviewCtx.fillStyle = 'rgba(100,100,100,1)';
-      wmPreviewCtx.font = `${parseFloat($('#wmSize').value)||42}px sans-serif`;
-      wmPreviewCtx.textAlign = 'center';
-      wmPreviewCtx.fillText(text, 0, 0);
-      wmPreviewCtx.restore();
-    }
+    } catch (e) { console.warn('Failed to set watermark preview in iframe', e); }
   } catch (e) {
     console.error('Preview render failed', e);
   }
 }
 
 async function renderWmPreviewPage(pageNum) {
-  if (!wmPreviewCtx) return;
-  if (!_wmPreviewPdf) return renderWmPreview();
+  if (!wmPreviewCtx || !_wmPreviewPdf) return;
   const num = Math.max(1, Math.min(_wmPreviewPdfTotal || 1, pageNum));
   _wmPreviewCurrent = num;
   const pageNumEl = document.querySelector('#wmPreviewPageNum');
@@ -851,25 +1041,57 @@ async function renderWmPreviewPage(pageNum) {
   const page = await _wmPreviewPdf.getPage(num);
   const viewport = page.getViewport({ scale: wmPreviewCanvas.width / page.getViewport({scale:1}).width });
   await page.render({ canvasContext: wmPreviewCtx, viewport }).promise;
+  // capture base page image after rendering
+  try { wmPreviewBaseImageData = wmPreviewCtx.getImageData(0,0, wmPreviewCanvas.width, wmPreviewCanvas.height); } catch (e) { wmPreviewBaseImageData = null; }
+  overlayWmOnCanvas();
+}
 
-  // overlay watermark similar to renderWmPreview (non-tiled)
+async function overlayWmOnCanvas() {
+  if (!wmPreviewCtx) return;
+  if (!_wmPreviewPdf) {
+    // clear canvas if there's no loaded preview PDF
+    try { wmPreviewCtx.clearRect(0,0, wmPreviewCanvas.width, wmPreviewCanvas.height); } catch (e) {}
+    return;
+  }
+  // restore the base rendered page image so overlays do not accumulate
+  try {
+    if (wmPreviewBaseImageData) {
+      wmPreviewCtx.putImageData(wmPreviewBaseImageData, 0, 0);
+    } else {
+      wmPreviewCtx.clearRect(0,0, wmPreviewCanvas.width, wmPreviewCanvas.height);
+    }
+  } catch (e) {
+    try { wmPreviewCtx.clearRect(0,0, wmPreviewCanvas.width, wmPreviewCanvas.height); } catch (ee) {}
+  }
   const mode = document.querySelector('input[name="wmMode"]:checked')?.value || 'text';
   const opacity = Math.max(0, Math.min(1, parseFloat($('#wmOpacity').value) || 0.3));
   if (mode === 'logo') {
     const logoFile = $('#wmLogo').files?.[0];
     if (logoFile) {
-      const img = new Image();
-      img.onload = () => {
-        wmPreviewCtx.globalAlpha = opacity;
-        const targetW = wmPreviewCanvas.width * 0.4;
-        const scale = targetW / img.width;
-        const targetH = img.height * scale;
-        const x = (wmPreviewCanvas.width - targetW)/2;
-        const y = (wmPreviewCanvas.height - targetH)/2;
-        wmPreviewCtx.drawImage(img, x, y, targetW, targetH);
-        wmPreviewCtx.globalAlpha = 1;
-      };
-      img.src = URL.createObjectURL(logoFile);
+      // draw logo only after it has loaded; await the load to ensure exported preview includes it
+      await new Promise((resolve) => {
+        const img = new Image();
+        img.onload = () => {
+          try {
+            wmPreviewCtx.globalAlpha = opacity;
+            const targetW = wmPreviewCanvas.width * 0.4;
+            const scale = targetW / img.width;
+            const targetH = img.height * scale;
+            const x = (wmPreviewCanvas.width - targetW)/2;
+            const y = (wmPreviewCanvas.height - targetH)/2;
+            wmPreviewCtx.drawImage(img, x, y, targetW, targetH);
+          } catch (e) { console.warn('Logo overlay draw failed', e); }
+          wmPreviewCtx.globalAlpha = 1;
+          // revoke previous logo URL if any
+          try { if (_wmLastLogoUrl) { URL.revokeObjectURL(_wmLastLogoUrl); _wmLastLogoUrl = null; } } catch (e) {}
+          // revoke the object URL used by this image after a short delay to ensure draw completed in some browsers
+          try { setTimeout(() => { try { if (_wmLastLogoUrl) { URL.revokeObjectURL(_wmLastLogoUrl); _wmLastLogoUrl = null; } } catch(e){} }, 100); } catch(e){}
+          resolve();
+        };
+        img.onerror = () => { resolve(); };
+        try { if (_wmLastLogoUrl) { URL.revokeObjectURL(_wmLastLogoUrl); _wmLastLogoUrl = null; } } catch (e) {}
+        try { _wmLastLogoUrl = URL.createObjectURL(logoFile); img.src = _wmLastLogoUrl; } catch (e) { img.src = ''; resolve(); }
+      });
     }
   } else {
     const text = $('#wmText').value || 'CONFIDENTIAL';
@@ -884,11 +1106,21 @@ async function renderWmPreviewPage(pageNum) {
     wmPreviewCtx.fillText(text, 0, 0);
     wmPreviewCtx.restore();
   }
+  // update iframe preview to match canvas overlay in case the watermark parameters changed
+  try {
+    const iframe = document.querySelector('#preview');
+    if (iframe && wmPreviewCanvas) {
+      if (iframe.src && iframe.src.startsWith('blob:')) { try { URL.revokeObjectURL(iframe.src); } catch (e) {} }
+      const blob = await new Promise(res => wmPreviewCanvas.toBlob(res, 'image/png'));
+      try {
+        const url = URL.createObjectURL(blob);
+        iframe.src = url;
+        const a = document.querySelector('#wmDownload');
+        if (a) { try { if (a.dataset?.previewUrl) URL.revokeObjectURL(a.dataset.previewUrl); } catch (e) {} a.dataset.previewUrl = url; }
+      } catch (e) { console.warn(e); }
+    }
+  } catch (e) { /* ignore preview update errors */ }
 }
-
-document.querySelector('#wmPrevPage')?.addEventListener('click', async () => { if (_wmPreviewPdf) await renderWmPreviewPage(_wmPreviewCurrent-1); });
-document.querySelector('#wmNextPage')?.addEventListener('click', async () => { if (_wmPreviewPdf) await renderWmPreviewPage(_wmPreviewCurrent+1); });
-document.querySelector('#wmPreviewPageNum')?.addEventListener('change', async (e) => { const v = parseInt(e.target.value,10)||1; if (_wmPreviewPdf) await renderWmPreviewPage(v); });
 
 function validateWmInputs() {
   const mode = document.querySelector('input[name="wmMode"]:checked')?.value || 'text';
@@ -896,14 +1128,39 @@ function validateWmInputs() {
   let ok = hasPdf;
   if (mode === 'text') ok = ok && ($('#wmText').value || '').trim().length>0;
   if (mode === 'logo') ok = ok && !!$('#wmLogo').files?.length;
-  document.querySelector('#wmBtn').disabled = !ok;
+  const btn = document.querySelector('#wmBtn');
+  if (btn) btn.disabled = !ok;
 }
 
-// Wire preview + validation on relevant changes
-['#wmFile','#wmLogo','#wmText','#wmSize','#wmOpacity','#wmRotate','input[name="wmMode"]'].forEach(sel => {
-  document.querySelectorAll(sel).forEach(el => el.addEventListener('change', () => { renderWmPreview(); validateWmInputs(); }));
+// Watermark input wiring:
+// File inputs trigger a full PDF render; parameter changes update the canvas overlay quickly.
+['#wmFile','#wmLogo'].forEach(sel => {
+  document.querySelectorAll(sel).forEach(el => el.addEventListener('change', () => { validateWmInputs(); renderWmPreview().catch(()=>{}); }));
 });
-renderWmPreview(); validateWmInputs();
+const paramSelectors = ['#wmText','#wmSize','#wmOpacity','#wmRotate','input[name="wmMode"]','#wmTile','#wmPosition'];
+paramSelectors.forEach(sel => {
+  document.querySelectorAll(sel).forEach(el => {
+    const handler = () => {
+      validateWmInputs();
+      try {
+        if (typeof _wmPreviewPdf !== 'undefined' && _wmPreviewPdf) {
+          if (typeof overlayWmOnCanvas === 'function') overlayWmOnCanvas();
+        } else {
+          // no PDF loaded yet — render the preview (this will also apply overlays)
+          if (typeof renderWmPreview === 'function') renderWmPreview().catch(()=>{});
+        }
+      } catch (e) { /* ignore */ }
+    };
+    el.addEventListener('input', handler);
+    el.addEventListener('change', handler);
+  });
+});
+validateWmInputs();
+
+// wire watermark navigation buttons if present
+document.querySelector('#wmPrevPage')?.addEventListener('click', async () => { if (_wmPreviewPdf) await renderWmPreviewPage(_wmPreviewCurrent-1); });
+document.querySelector('#wmNextPage')?.addEventListener('click', async () => { if (_wmPreviewPdf) await renderWmPreviewPage(_wmPreviewCurrent+1); });
+document.querySelector('#wmPreviewPageNum')?.addEventListener('change', async (e) => { const v = parseInt(e.target.value,10)||1; if (_wmPreviewPdf) await renderWmPreviewPage(v); });
 
 /* ---- Word -> PDF (.docx -> PDF) ---- */
 document.querySelector('#doc2pdfBtn').addEventListener('click', async () => {
@@ -929,8 +1186,12 @@ document.querySelector('#doc2pdfBtn').addEventListener('click', async () => {
       const blob = await resp.blob();
       const url = URL.createObjectURL(blob);
       const a = document.querySelector('#doc2pdfDownload');
+      // revoke previous url if any
+      try { const prev = a.dataset?.blobUrl; if (prev) URL.revokeObjectURL(prev); } catch (e) {}
       a.href = url; a.style.display = 'inline-flex'; a.download = (file.name.replace(/\.docx$/i,'') || 'converted') + '.pdf';
-      downloadAndPreview(blob, a.download);
+      a.dataset.blobUrl = url;
+      // show preview without auto-downloading
+      try { const pp = document.querySelector('#previewPanel'); if (pp) pp.style.display = 'block'; const iframe = document.querySelector('#preview'); if (iframe) iframe.src = url; } catch (e) {}
       toast('Conversion complete.');
       return;
     }
