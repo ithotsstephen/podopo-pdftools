@@ -1,0 +1,300 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>PDF Forge – Online PDF Editor & Converter</title>
+  <meta name="description" content="Edit & convert PDFs in your browser. Merge, split, watermark, rotate, and turn images into PDFs. Installable PWA with offline support." />
+  <meta name="theme-color" content="#a055bb" />
+  <link rel="manifest" href="manifest.webmanifest" />
+  <link rel="apple-touch-icon" href="icons/icon-192.png"/>
+  <meta name="apple-mobile-web-app-capable" content="yes"/>
+  <!-- Recommended non-deprecated meta for older/newer browsers -->
+  <meta name="mobile-web-app-capable" content="yes"/>
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"/>
+
+  <link rel="icon" type="image/png" href="icons/icon-192.png" />
+  <link rel="stylesheet" href="styles.css" />
+
+  <!-- PDF-Lib for editing PDFs (loaded from CDN). -->
+  <script src="https://cdn.jsdelivr.net/npm/pdf-lib/dist/pdf-lib.min.js"></script>
+  <!-- PDF.js for rendering PDF pages to canvas -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.min.js"></script>
+  <!-- docx (dolanmiu/docx) for creating .docx files in browser -->
+  <script src="https://cdn.jsdelivr.net/npm/docx@7.6.0/build/index.umd.js"></script>
+  <!-- mammoth for .docx -> HTML conversion -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.4.16/mammoth.browser.min.js"></script>
+  <!-- html2pdf (html2canvas + jsPDF) for HTML -> PDF in browser -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.9.3/html2pdf.bundle.min.js"></script>
+  <!-- tesseract.js for OCR fallback when PDFs are scanned images -->
+  <script src="https://cdn.jsdelivr.net/npm/tesseract.js@2.1.5/dist/tesseract.min.js"></script>
+  <!-- app-local OCR helper -->
+  <script src="ocr.js"></script>
+  <script defer src="app.js"></script>
+</head>
+<body>
+  <div class="container">
+    <header class="header">
+      <div class="brand">
+        <img alt="Logo" src="icons/icon-192.png" />
+        <div>
+          <h1>PDF Forge</h1>
+          <div class="badge">Online PDF Editor & Converter</div>
+        </div>
+      </div>
+      <div>
+        <label for="toolMenu" style="margin-right:8px;color:#fff;font-size:0.9em">Tools</label>
+        <select id="toolMenu" style="margin-right:12px">
+          <option value="#merge">Merge PDFs</option>
+          <option value="#split">Split / Extract</option>
+          <option value="#watermark">Watermark</option>
+          <option value="#rotate">Rotate</option>
+          <option value="#img2pdf">Images → PDF</option>
+          <option value="#pdf2doc">PDF → Word</option>
+          <option value="#doc2pdf">Word → PDF</option>
+          <option value="#ocr">OCR → Text</option>
+        </select>
+        <button id="installBtn" class="install-btn" title="Install as an app">Install</button>
+      </div>
+    </header>
+
+    <main class="grid">
+      <section class="card">
+        <h2>Tools</h2>
+        <p>Quickly <strong>merge</strong>, <strong>split</strong>, <strong>watermark</strong>, <strong>rotate</strong> PDFs, or convert <strong>images → PDF</strong>. Processed files never leave your browser.</p>
+
+        <div class="toolbar">
+          <button class="tool-btn active" data-target="#merge">Merge PDFs</button>
+          <button class="tool-btn" data-target="#split">Split / Extract pages</button>
+          <button class="tool-btn" data-target="#watermark">Add Text Watermark</button>
+          <button class="tool-btn" data-target="#rotate">Rotate Pages</button>
+          <button class="tool-btn" data-target="#img2pdf">Images → PDF</button>
+          <button class="tool-btn" data-target="#pdf2doc">PDF → Word</button>
+          <button class="tool-btn" data-target="#doc2pdf">Word → PDF</button>
+          <button class="tool-btn" data-target="#ocr">OCR → Text</button>
+        </div>
+
+        <div id="merge" class="panel">
+          <fieldset>
+            <legend>Merge PDFs</legend>
+            <label for="mergeFiles">Select PDF files (add multiple times and reorder below):</label>
+            <input id="mergeFiles" type="file" accept="application/pdf" multiple />
+            <div id="mergeList" class="file-list" aria-live="polite" style="margin-top:8px"></div>
+            <div class="action">
+              <button id="mergeBtn" class="primary-btn">Merge</button>
+              <a id="mergeDownload" class="download-link" download="merged.pdf">Download</a>
+            </div>
+          </fieldset>
+        </div>
+
+        <div id="split" class="panel" style="display:none">
+          <fieldset>
+            <legend>Split / Extract pages</legend>
+            <label for="splitFile">Select a PDF:</label>
+            <input id="splitFile" type="file" accept="application/pdf" />
+            <label for="splitRange" style="margin-top:8px">Pages (e.g., "1-3,5,8"):</label>
+            <input id="splitRange" type="text" placeholder="1-3,5" />
+            <div class="action">
+              <button id="splitBtn" class="primary-btn">Extract</button>
+              <a id="splitDownload" class="download-link" download="extracted.pdf">Download</a>
+            </div>
+          </fieldset>
+        </div>
+
+        <div id="watermark" class="panel" style="display:none">
+          <fieldset>
+            <legend>Add Watermark</legend>
+            <div style="margin-top:8px;display:flex;gap:12px;align-items:center">
+              <label><input type="radio" name="wmMode" id="wmModeText" value="text" checked> Text</label>
+              <label><input type="radio" name="wmMode" id="wmModeLogo" value="logo"> Logo</label>
+            </div>
+            <label for="wmFile">Select a PDF:</label>
+            <input id="wmFile" type="file" accept="application/pdf" />
+            <div id="wmTextControls">
+              <label for="wmText" style="margin-top:8px">Watermark text:</label>
+              <input id="wmText" type="text" placeholder="CONFIDENTIAL" />
+            </div>
+            <div id="wmLogoControls" style="display:none">
+              <label for="wmLogo" style="margin-top:8px">Upload logo (PNG/JPG):</label>
+              <input id="wmLogo" type="file" accept="image/*" />
+            </div>
+            <div id="wmPreviewWrap" style="margin-top:12px;display:flex;flex-direction:column;gap:6px;align-items:flex-start">
+              <div style="font-size:0.9em;color:#666">Preview (first page):</div>
+              <div style="display:flex;align-items:center;gap:8px;width:100%">
+                <button id="wmPrevPage" class="small-btn" type="button">◀</button>
+                <div style="display:flex;align-items:center;gap:6px">
+                  <input id="wmPreviewPageNum" type="number" value="1" min="1" style="width:60px" />
+                  <div id="wmPreviewTotal" style="min-width:36px;text-align:center">/ 1</div>
+                </div>
+                <button id="wmNextPage" class="small-btn" type="button">▶</button>
+              </div>
+              <canvas id="wmPreview" width="420" height="594" style="border:1px solid #ddd;max-width:100%;height:auto"></canvas>
+            </div>
+            <label style="margin-top:8px;display:flex;align-items:center;gap:8px">Rotate (degrees)
+              <input id="wmRotate" type="number" value="-45" style="width:90px"/>
+            </label>
+            <label style="margin-top:8px;display:flex;align-items:center;gap:8px">Position
+              <select id="wmPosition" style="width:140px">
+                <option value="center">Center</option>
+                <option value="top-left">Top left</option>
+                <option value="top-right">Top right</option>
+                <option value="bottom-left">Bottom left</option>
+                <option value="bottom-right">Bottom right</option>
+              </select>
+            </label>
+            <label style="display:flex;align-items:center;gap:8px;margin-top:8px">
+              <input id="wmTile" type="checkbox" /> Tile across page
+            </label>
+            <div class="action">
+              <label style="display:flex;align-items:center;gap:8px">
+                Size <input id="wmSize" type="number" value="42" style="width:90px"/>
+              </label>
+              <label style="display:flex;align-items:center;gap:8px">
+                Opacity <input id="wmOpacity" type="number" min="0" max="1" step="0.1" value="0.3" style="width:90px"/>
+              </label>
+              <button id="wmBtn" class="primary-btn">Apply</button>
+              <a id="wmDownload" class="download-link" download="watermarked.pdf">Download</a>
+            </div>
+          </fieldset>
+        </div>
+
+        <div id="rotate" class="panel" style="display:none">
+          <fieldset>
+            <legend>Rotate Pages</legend>
+            <label for="rotFile">Select a PDF:</label>
+            <input id="rotFile" type="file" accept="application/pdf" />
+            <div class="action">
+              <label style="display:flex;align-items:center;gap:8px">Degrees
+                <select id="rotDeg">
+                  <option value="90">90°</option>
+                  <option value="180">180°</option>
+                  <option value="270">270°</option>
+                </select>
+              </label>
+              <label style="display:flex;align-items:center;gap:8px">Pages
+                <input id="rotRange" type="text" placeholder="all or e.g. 1,3-5" />
+              </label>
+              <button id="rotBtn" class="primary-btn">Rotate</button>
+              <a id="rotDownload" class="download-link" download="rotated.pdf">Download</a>
+            </div>
+          </fieldset>
+        </div>
+
+        <div id="img2pdf" class="panel" style="display:none">
+          <fieldset>
+            <legend>Images → PDF</legend>
+            <label for="imgFiles">Select images (JPG/PNG):</label>
+            <input id="imgFiles" type="file" accept="image/*" multiple />
+            <div class="action">
+              <button id="img2pdfBtn" class="primary-btn">Create PDF</button>
+              <a id="img2pdfDownload" class="download-link" download="images.pdf">Download</a>
+            </div>
+          </fieldset>
+        </div>
+        <div id="pdf2doc" class="panel" style="display:none">
+          <fieldset>
+            <legend>PDF → Word</legend>
+            <label for="pdf2docFile">Select a PDF:</label>
+            <input id="pdf2docFile" type="file" accept="application/pdf" />
+            <label for="pdf2docRange" style="margin-top:8px">Pages (e.g., "1-3,5" or "all"):</label>
+            <input id="pdf2docRange" type="text" placeholder="all" />
+            <div style="display:flex;gap:8px;margin-top:8px;align-items:center">
+              <button id="pdf2docAll" type="button" class="small-btn">All</button>
+              <button id="pdf2docCurrent" type="button" class="small-btn">Current</button>
+              <button id="pdf2docUseRange" type="button" class="small-btn">Use Range</button>
+              <label style="margin-left:auto;display:flex;align-items:center;gap:8px">OCR language
+                <select id="pdf2docLang">
+                  <option value="eng">English</option>
+                  <option value="spa">Spanish</option>
+                  <option value="fra">French</option>
+                  <option value="deu">German</option>
+                </select>
+              </label>
+            </div>
+            <div id="pdf2docProgress" style="margin-top:10px;display:none">
+              <div style="height:10px;background:#eee;border-radius:6px;overflow:hidden">
+                <div id="pdf2docProgressBar" style="height:100%;width:0%;background:#6a9;transition:width 200ms"></div>
+              </div>
+              <div id="pdf2docStatus" style="margin-top:6px;font-size:0.9em;color:#444"></div>
+            </div>
+            <p style="font-size:0.9em;color:#666;margin-top:6px">This converts each PDF page to an image and embeds pages into a .docx file. Text will not be extracted as editable text.</p>
+            <div class="action">
+              <button id="pdf2docBtn" class="primary-btn">Convert to .docx</button>
+              <a id="pdf2docDownload" class="download-link" download="converted.docx">Download</a>
+            </div>
+          </fieldset>
+        </div>
+        <div id="ocr" class="panel" style="display:none">
+          <fieldset>
+            <legend>OCR → Text</legend>
+            <label for="ocrFile">Select an image or scanned PDF:</label>
+            <input id="ocrFile" type="file" accept="image/*,application/pdf" />
+            <div style="display:flex;gap:8px;align-items:center;margin-top:8px">
+              <label>Language
+                <select id="ocrLang" style="margin-left:8px">
+                  <option value="eng">English</option>
+                  <option value="spa">Spanish</option>
+                  <option value="fra">French</option>
+                  <option value="deu">German</option>
+                </select>
+              </label>
+              <label style="margin-left:auto;display:flex;align-items:center;gap:8px">Pages
+                <input id="ocrRange" type="text" placeholder="all or e.g. 1,3-5" style="width:160px;margin-left:8px" />
+              </label>
+            </div>
+            <div id="ocrProgress" style="margin-top:10px;display:none">
+              <div style="height:10px;background:#eee;border-radius:6px;overflow:hidden">
+                <div id="ocrProgressBar" style="height:100%;width:0%;background:#69c;transition:width 200ms"></div>
+              </div>
+              <div id="ocrStatus" style="margin-top:6px;font-size:0.9em;color:#444"></div>
+            </div>
+            <textarea id="ocrOutput" style="width:100%;height:180px;margin-top:8px;font-family:monospace;white-space:pre-wrap"></textarea>
+            <div class="action" style="margin-top:8px">
+              <button id="ocrBtn" class="primary-btn">Extract Text</button>
+              <a id="ocrDownload" class="download-link" style="display:none" download="extracted.txt">Download TXT</a>
+              <button id="ocrCopy" class="small-btn" type="button">Copy</button>
+              <button id="ocrCheck" class="small-btn" type="button">Check OCR</button>
+            </div>
+          </fieldset>
+        </div>
+        <div id="doc2pdf" class="panel" style="display:none">
+          <fieldset>
+            <legend>Word → PDF</legend>
+            <label for="doc2pdfFile">Select a .docx file:</label>
+            <input id="doc2pdfFile" type="file" accept=".docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document" />
+            <p style="font-size:0.9em;color:#666;margin-top:6px">Converts a .docx to PDF in-browser using mammoth + html2pdf. Complex layouts may vary.</p>
+            <div class="action">
+              <button id="doc2pdfBtn" class="primary-btn">Convert to PDF</button>
+              <a id="doc2pdfDownload" class="download-link" download="converted.pdf">Download</a>
+            </div>
+          </fieldset>
+        </div>
+      </section>
+
+      <aside class="card">
+        <h2>Preview</h2>
+        <p>Results appear here; you can view or download them.</p>
+        <div class="preview">
+          <iframe id="preview" title="PDF Preview"></iframe>
+        </div>
+      </aside>
+    </main>
+
+    <footer class="footer">
+      <p>PDF Forge • PWA • <a href="#" id="addToHome">Add to Home Screen</a></p>
+      <p>All processing happens locally in your browser. No files are uploaded.</p>
+    </footer>
+  </div>
+
+  <div id="toast" class="toast"></div>
+
+  <!-- Service worker registration -->
+  <script>
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('./service-worker.js');
+      });
+    }
+  </script>
+</body>
+</html>
