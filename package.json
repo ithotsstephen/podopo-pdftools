@@ -1,0 +1,16 @@
+{
+  "name": "pdf-editor-pwa",
+  "version": "1.0.0",
+  "description": "A ready-to-deploy Progressive Web App for editing and converting PDFs in the browser.",
+  "main": "app.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "express": "^5.1.0",
+    "multer": "^2.0.2"
+  }
+}

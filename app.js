@@ -13,10 +13,20 @@ const toast = (msg) => {
 document.querySelectorAll(".tool-btn").forEach(btn => {
   btn.addEventListener("click", () => {
     document.querySelectorAll(".tool-btn").forEach(b => b.classList.remove("active"));
-    document.querySelectorAll(".panel").forEach(p => p.style.display = "none");
+    document.querySelectorAll(".panel").forEach(p => {
+      p.style.display = "none";
+      // hide all interactive sections
+      const interactive = p.querySelector('[class$="-interactive"]');
+      if (interactive) interactive.style.display = "none";
+    });
     btn.classList.add("active");
     const target = btn.getAttribute("data-target");
-    document.querySelector(target).style.display = "block";
+    const panel = document.querySelector(target);
+    if (panel) {
+      panel.style.display = "block";
+      const interactive = panel.querySelector('[class$="-interactive"]');
+      if (interactive) interactive.style.display = "block";
+    }
   });
 });
 
@@ -26,11 +36,20 @@ if (toolMenu) {
   toolMenu.addEventListener('change', (e) => {
     const sel = e.target.value;
     // hide panels and unset toolbar buttons
-    document.querySelectorAll('.panel').forEach(p => p.style.display = 'none');
+    document.querySelectorAll('.panel').forEach(p => {
+      p.style.display = 'none';
+      // hide all interactive sections
+      const interactive = p.querySelector('[class$="-interactive"]');
+      if (interactive) interactive.style.display = "none";
+    });
     document.querySelectorAll('.tool-btn').forEach(b => b.classList.remove('active'));
     // show selected
     const el = document.querySelector(sel);
-    if (el) el.style.display = 'block';
+    if (el) {
+      el.style.display = 'block';
+      const interactive = el.querySelector('[class$="-interactive"]');
+      if (interactive) interactive.style.display = "block";
+    }
     // mark matching toolbar button active
     const tb = document.querySelector(`.tool-btn[data-target="${sel}"]`);
     if (tb) tb.classList.add('active');
@@ -544,10 +563,43 @@ document.querySelector('#pdf2docBtn').addEventListener('click', async () => {
   const file = document.querySelector('#pdf2docFile').files?.[0];
   if (!file) return toast('Select a PDF.');
 
-  // Ensure PDF.js and docx are loaded
-  if (typeof window.pdfjsLib === 'undefined' || typeof window.docx === 'undefined') {
-    toast('Required libraries not available.');
+  // Ensure PDF.js is loaded; for docx we can fallback to a server-side converter if missing
+  if (typeof window.pdfjsLib === 'undefined') {
+    toast('PDF renderer (pdf.js) is missing.');
     return;
+  }
+  if (typeof window.docx === 'undefined' || !window.docx.Packer) {
+    console.warn('docx not found in browser; attempting server-side conversion fallback');
+    try {
+      const form = new FormData();
+      form.append('file', file, file.name || 'upload.pdf');
+      // try localhost first
+      let resp = null;
+      try {
+        resp = await fetch('http://localhost:8000/convert', { method: 'POST', body: form });
+      } catch (e) {
+        console.info('localhost:8000 not reachable, trying relative /server/convert');
+      }
+      if (!resp || !resp.ok) {
+        try {
+          resp = await fetch('/server/convert', { method: 'POST', body: form });
+        } catch (e) { /* ignore */ }
+      }
+      if (resp && resp.ok) {
+        const blob = await resp.blob();
+        const url = URL.createObjectURL(blob);
+        const a = document.querySelector('#pdf2docDownload');
+        a.href = url; a.style.display = 'inline-flex'; a.download = (file.name.replace(/\.pdf$/i,'') || 'converted') + '.docx';
+        toast('Server-side conversion complete.');
+        return;
+      }
+      toast('Server-side conversion failed (no response).');
+      return;
+    } catch (e) {
+      console.error('Server conversion failed', e);
+      toast('Server-side conversion failed. See console.');
+      return;
+    }
   }
 
   try {
@@ -858,69 +910,35 @@ document.querySelector('#doc2pdfBtn').addEventListener('click', async () => {
   const file = document.querySelector('#doc2pdfFile').files?.[0];
   if (!file) return toast('Select a .docx file.');
 
-  if (typeof window.mammoth === 'undefined' || typeof window.html2pdf === 'undefined') {
-    toast('Required libraries not available.');
-    return;
-  }
-
+  toast('Uploading to server for conversion...');
   try {
-    const arrayBuffer = await file.arrayBuffer();
-    // mammoth expects an ArrayBuffer
-    const result = await window.mammoth.convertToHtml({ arrayBuffer });
-    const html = result.value || '<div>(No content)</div>'; // generated HTML
-
-    // Create an off-screen but visible container sized for A4 to ensure html2canvas can render it
-    const container = document.createElement('div');
-    container.style.position = 'absolute';
-    container.style.left = '0';
-    container.style.top = '-10000px';
-    container.style.width = '210mm';
-    container.style.background = '#fff';
-    container.style.color = '#000';
-    container.style.padding = '8mm';
-    container.style.boxSizing = 'border-box';
-    container.innerHTML = html;
-    document.body.appendChild(container);
-
-    // Wait for webfonts to load (if supported) and images to finish loading to avoid blank output
-    try { if (document.fonts && document.fonts.ready) await document.fonts.ready; } catch (e) { /* ignore */ }
-    const imgs = Array.from(container.querySelectorAll('img'));
-    await Promise.all(imgs.map(img => new Promise(resolve => {
-      if (img.complete) return resolve();
-      const onDone = () => { img.removeEventListener('load', onDone); img.removeEventListener('error', onDone); resolve(); };
-      img.addEventListener('load', onDone);
-      img.addEventListener('error', onDone);
-      // fallback timeout
-      setTimeout(resolve, 5000);
-    })));
-
-    toast('Rendering PDF...');
-    // Use html2pdf to generate PDF; get blob via promise
-    const opt = { margin: 10, filename: (file.name.replace(/\.docx$/i,'')||'converted') + '.pdf', image: { type: 'jpeg', quality: 0.98 }, html2canvas: { scale: 2, useCORS: true }, jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' } };
-
-    // Ensure html2pdf is present
-    if (typeof window.html2pdf === 'undefined') {
-      toast('PDF renderer (html2pdf) is not available.');
-      container.remove();
-      return;
-    }
-
+    const form = new FormData();
+    form.append('file', file, file.name || 'upload.docx');
+    let resp = null;
     try {
-      const pdf = await window.html2pdf().set(opt).from(container).toPdf().get('pdf');
-      const blob = pdf.output('blob');
+      resp = await fetch('http://localhost:3000/convert/word-to-pdf', { method: 'POST', body: form });
+    } catch (e) {
+      console.info('localhost:3000 not reachable, trying relative /convert/word-to-pdf');
+    }
+    if (!resp || !resp.ok) {
+      try {
+        resp = await fetch('/convert/word-to-pdf', { method: 'POST', body: form });
+      } catch (e) { /* ignore */ }
+    }
+    if (resp && resp.ok) {
+      const blob = await resp.blob();
       const url = URL.createObjectURL(blob);
       const a = document.querySelector('#doc2pdfDownload');
-      a.href = url; a.style.display = 'inline-flex';
-      a.download = opt.filename;
-      // preview first page as PDF
-      downloadAndPreview(blob, opt.filename);
+      a.href = url; a.style.display = 'inline-flex'; a.download = (file.name.replace(/\.docx$/i,'') || 'converted') + '.pdf';
+      downloadAndPreview(blob, a.download);
       toast('Conversion complete.');
-    } finally {
-      // cleanup
-      setTimeout(() => container.remove(), 500);
+      return;
     }
-  } catch (err) {
-    console.error(err);
-    toast('Word → PDF conversion failed.');
+    toast('Server conversion failed (no response).');
+    return;
+  } catch (e) {
+    console.error('Server conversion failed', e);
+    toast('Server-side conversion failed. See console.');
+    return;
   }
 });
